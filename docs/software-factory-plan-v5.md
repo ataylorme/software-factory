@@ -1,0 +1,74 @@
+# Cloudflare Agentic Software Factory — Revised Plan v5
+
+**Status:** Discussion draft, 20 November 2026. This revision proposes changes to the attached v4; it does not authorize implementation. The companion **Software Factory Work Streams** document assigns parallel work and acceptance checks.
+
+## Goals and decisions
+
+Build a multi-user, repository-aware factory for agent-assisted requirements, design, development, QA, and release with human approval and auditable, least-privilege actions.
+
+**Decided in this conversation:** TanStack Start on Cloudflare Workers; TanStack DB as the client collection layer; shadcn/ui with Tailwind; Better Auth with a dedicated auth D1 separate from analytics; Drizzle for D1 and Durable Object SQLite; per-project Durable Objects as authoritative project state; TanStack AI with its Cloudflare adapter for background agent model/tool loops, with Workflows and Durable Objects for orchestration/state; GitHub App installation tokens for bot actions and user tokens for explicitly user-attributed actions; GitHub issues and PRs as the initial interaction surface, with in-app chat deferred; a private-repository deployment for trusted contractors, with fork PRs out of initial scope; Cloudflare AI Gateway limits plus usage monitoring/alerts as initial spend controls (not a strict hard cap); Cloudflare Access for preview hosts and admin as defense in depth; Biome rather than ESLint/Prettier. GitHub identity and repository permissions remain distinct concerns. The plan is still open to revision.
+
+**Implementation direction:** Use OpenTofu for base resources with Wrangler for deploys, sandboxed execution, and Cedar for fine-grained policy. Compatibility, security, and operational checks belong in normal implementation and testing; they are not prerequisites to choosing the architecture.
+
+## Architecture
+
+1. **Control plane:** TanStack Start and Router on Workers, TanStack DB with Query-backed collections, shadcn/ui and Tailwind, Better Auth, authenticated server functions, GitHub work queue, status and audit UI. Use the Cloudflare Vite plugin. A custom server entrypoint re-exports the Start handler and any Durable Object classes. [Cloudflare setup](https://developers.cloudflare.com/workers/framework-guides/web-apps/tanstack-start/).
+2. **GitHub-first interaction:** A GitHub App receives issue, PR, review and comment webhooks, starts or updates authorized workflow runs, and posts progress and results back to GitHub. Specialist agents (refinement, planning, development, QA, operations) receive role-specific GitHub tools through app-backed adapters or MCP, with permissions enforced per action. Human approvals use explicit review/approval semantics bound to the relevant commit and action; ordinary comments provide feedback but do not grant authorization. The control plane provides status, configuration and audit views; there is no in-app chat in the initial release.
+3. **Project and workflow state:** Workflows orchestrate the SDLC and wait for authorized human events. A per-project Durable Object with SQLite is the authoritative serialized project-transition state; test concurrency, retries, and recovery. R2 stores large artifacts; analytics is a separate projection, not the source of truth. Workflows pass artifact references rather than large payloads.
+4. **Models:** Cloudflare AI Gateway with provider keys (BYOK), model-specific adapters and explicit routing. Verify that enterprise provider billing and commit consumption follow the actual contract, and that model/tool capabilities work per provider; switching providers is not automatically transparent.
+5. **Tool and execution boundary:** A policy gateway checks authenticated principal, operation, resource, arguments, state, and approval before any side effect. Isolated container execution handles coding agents and tests; Dynamic Workers/Code Mode are optional for constrained scripts. Policy must also cover CLI, Git and network paths, not only MCP calls.
+6. **Storage:** Drizzle for D1 and Durable Object SQLite ([D1](https://orm.drizzle.team/docs/connect-cloudflare-d1), [Durable Objects](https://orm.drizzle.team/docs/sqlite/connect-cloudflare-do)); dedicated auth D1; separate analytics D1 when needed; R2 for artifacts and versioned policy inputs. GitHub remains the repository authority. Evaluate [Cloudflare Artifacts](https://developers.cloudflare.com/artifacts/) as a Git-compatible handoff mechanism, not an assumed replacement; it requires Workers Paid.
+
+## Identity, authorization, and trust
+
+- Better Auth sessions establish the application identity. Auth records and credentials never share the analytics D1. Use Drizzle for both D1 databases, including the Better Auth Drizzle adapter for auth persistence; keep auth and analytics schemas and migrations separate.
+- Map user, tenant, repository and role server-side. Check current repository access, including revocation, on protected operations. Give specialist agents role-specific GitHub tools via MCP or app-backed adapters, authenticated with short-lived GitHub App installation tokens for bot actions. Use the user's GitHub token only when explicitly acting on that user's behalf, such as recording their approval of evidence; subsequent bot actions, such as merging, use the App installation token. Keep the acting principal and credential type explicit in authorization and audit records; never treat an installation token as proof of a user's authorization.
+- Authenticate and authorize every server function, API, agent connection, WebSocket upgrade, approval, and tool invocation. Router guards, browser caches, Access service tokens, and self-reported model context are not authorization boundaries. Carry a verified, scoped principal to the gateway.
+- Keep secrets out of agent-generated code and sandboxes. Restrict sandbox egress and inject credentials only into permitted requests where technically verified; require the policy boundary for writes, including direct Git/CLI paths. Test attempts to bypass it and bind approval to the exact operation, target, principal and revision.
+- Access protects admin and preview entrypoints in addition to Better Auth; test actual protected hostnames and service-token access. Define and enforce how an Access identity corresponds to the Better Auth user.
+- Better Auth's [OAuth proxy](https://better-auth.com/docs/plugins/oauth-proxy) may be used for trusted collaborator previews. Its shared secret is sensitive because it can assert provider identities in participating environments; keep it in trusted preview configuration only. Use separate staging auth data, never production auth data. Fork PR previews are out of initial scope.
+
+## UI and TanStack libraries
+
+| Library | Proposed role |
+|---|---|
+| Start + Router | SSR, typed routes, server functions, validated URL filters. Server-side checks remain authoritative. |
+| Query | Request-scoped SSR fetching, caching and mutation invalidation for server data. Clear private caches on account/tenant change; use private, no-store responses. |
+| **DB (required)** | Implement typed session and project collections and live filtered/joined views using Query collections. The [product page](https://tanstack.com/db/latest) currently labels DB beta; pin compatible versions and test upgrades. |
+| **shadcn/ui (required)** | Shared navigation, dialogs, form controls and styled tables with Tailwind; compose with TanStack Form/Table. |
+| Form + Table | Forms with server-side validation; accessible, server-paginated audit and usage tables. |
+| Virtual | Add for long logs or evidence lists if measured; preserve stable IDs. |
+| Markdown + Highlight | Evaluate for streamed responses and code blocks; untrusted Markdown requires strict rendering/URL policies and no raw HTML by default. |
+| Charts, Pacer, Hotkeys, Store, Devtools, Intent | Optional, not initial dependencies. Charts and Devtools are documented as alpha; Pacer and Hotkeys as beta. Review Intent's package-skill allowlist and supply-chain trust model before use. |
+
+**UI components (decided):** Use [shadcn/ui](https://ui.shadcn.com/docs) for the dashboard's dialogs, forms, navigation, and tables; its [TanStack Start guide](https://ui.shadcn.com/docs/installation/tanstack) and TanStack Form integration make it complementary to the headless TanStack libraries. Its component source is added to the application, making customization easy but maintenance our responsibility; it introduces Tailwind and underlying component dependencies. Review accessibility, copied code, updates, and third-party registry provenance. Evaluate AI-specific components selectively; they do not supply agent transport or authorization.
+
+**DB boundary:** TanStack DB is a required reactive client collection layer, not Cloudflare D1 or a transport. Query-backed collections load authorized snapshots; real-time multi-user changes require an independently authenticated event/sync path. Implement event invalidation/refetch or supported collection updates with versioning, reconnect/replay, duplicate handling, and authoritative snapshot reconciliation. SSR clients are request-scoped; collections and cache keys are tenant-scoped and cleaned up on account switch. Never show approvals, policy decisions, pushes, or deployments as completed optimistically. See [Query collection](https://tanstack.com/db/latest/docs/collections/query-collection) and [TanStack index](https://tanstack.com/llms.txt).
+
+## Agent, gateway and sandbox choices
+
+- **Background agent model/tool API:** Use TanStack AI with its [Cloudflare adapter](https://tanstack.com/ai/latest/docs/adapters/cloudflare) for Workers AI and AI Gateway, including supported third-party providers. Cloudflare Workflows orchestrate the SDLC, per-project Durable Objects own state, and sandbox workers execute repository tasks. TanStack AI is not the GitHub event/workflow or project-state layer; chat-specific `AIChatAgent` is not part of the initial UX.
+- **Model spend:** Use [AI Gateway spend limits](https://developers.cloudflare.com/ai-gateway/features/spend-limits/) plus usage monitoring and alerts initially. Limits apply to BYOK models with known prices, are estimated and eventually consistent, and can overshoot under concurrency; they are not strict hard caps. A strict reservation/reconciliation ledger is not in initial scope.
+- **Attribution and privacy:** [Gateway metadata](https://developers.cloudflare.com/ai-gateway/observability/custom-metadata/) permits five custom entries; design a minimal trusted metadata contract and avoid sensitive values. Evaluate Gateway analytics/Logpush vs an additional D1 projection, including retention, cost, deduplication and reconciliation with provider billing. Do not assume the gateway is a complete accounting ledger.
+- **Guardrails:** [Guardrails](https://developers.cloudflare.com/ai-gateway/features/guardrails/) checks eligible prompts/responses; DLP is distinct. Streamed REST responses are evaluated without response-policy enforcement. Do not promise universal PII redaction or protection from prompt injection.
+- **Cedar:** Use `@cedar-policy/cedar-wasm` in the Workers runtime, with tests for bundle size, initialization, policy validity and fail-closed behavior. An Access [MCP portal](https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls/mcp-portals/) can provide optional coarse access and tool curation, but cannot replace repository/branch/argument-level authorization.
+- **Sandbox:** Follow [Sandbox 1.0 migration](https://developers.cloudflare.com/sandbox/sdk/migrate/) and the [coding-agent runner](https://developers.cloudflare.com/sandbox/get-started/build-a-coding-agent-runner/). Use the documented coding-agent runner; the experimental container harness and Dynamic Workers/Code Mode are optional alternatives, not prerequisites. Avoid assuming sub-millisecond execution or that code isolation alone authorizes tool calls.
+
+## Worker Previews
+
+Use Wrangler `preview` (4.135.0 or later) and a complete `previews` configuration for branch deployments. Durable Objects and configured containers receive per-preview isolation; D1, R2, KV and other resources share data if bound to the same resource. Service bindings reach the target Worker's production deployment, so point preview bindings to explicitly separate staging services. Workflow bindings use existing Workflow deployments, not automatically branch-specific code. Queues, cron and routes have additional limitations. [Configuration](https://developers.cloudflare.com/workers/previews/configuration/) · [Resource isolation](https://developers.cloudflare.com/workers/previews/resources/).
+
+Provision preview-safe variables and secrets, apply migrations to the selected test database before deployment, and protect both preview and immutable deployment URLs with Access. Initial previews run only for trusted collaborators in the private repository; fork PR previews are not supported. Use controlled staging services and auth data, keep production credentials and data out of previews, and give schema-changing branches isolated test databases. Use scoped per-PR IaC state and exact resource identities for cleanup, including any leftover container app. Never destroy shared resources from a PR-close handler.
+
+## Delivery order
+
+- **Foundation:** scaffold and pin the supported toolchain, define minimal contracts, CI, and resource ownership. Biome is the formatter and linter.
+- **Parallel pillars:** infrastructure, Start/auth, state/data, policy and AI gateway can proceed against agreed interfaces in separate paths. No stream independently edits shared root manifests, Wrangler entrypoints, or generated migrations.
+- **Integration:** merge in dependency order; add agents, workflows and execution. Assign a single integration owner for shared entrypoints/config and schema migrations.
+- **Preview, QA and operations:** ship an end-to-end isolated preview, a bounded QA loop with explicit retry limits and approval gates, then audit and usage views.
+
+Success means a user can authenticate, access only an authorized repository, trigger factory work from GitHub, review evidence and approve a scoped action there, and inspect its audited result in GitHub and the control plane without cross-tenant leakage. TanStack DB implementation acceptance requires two dashboard clients to converge after a disconnected/reconnected update, with failed writes rolled back.
+
+## Planning status
+
+Time and schedule estimates are intentionally omitted. Compatibility, security, and operational checks are implementation and testing work, not prerequisites to starting.
