@@ -1,0 +1,9 @@
+{
+  "name": "@software-factory/sandbox-tools",
+  "private": true,
+  "type": "module",
+  "exports": {},
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}

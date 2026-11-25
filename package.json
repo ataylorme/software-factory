@@ -1,0 +1,22 @@
+{
+  "name": "software-factory",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.30.3",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.4",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
