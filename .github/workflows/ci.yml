@@ -25,3 +25,18 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  tofu-module:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/tofu/modules/pr-ephemeral
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@000eeb8522f0572907c393e8151076c205fdba1b # v1.0.6
+        with:
+          tofu_version: 1.10.7
+      - run: tofu fmt -check -recursive
+      - run: tofu init -backend=false -lockfile=readonly
+      - run: tofu validate
+      - run: tofu test
