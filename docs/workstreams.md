@@ -105,6 +105,7 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 - Analytics D1 schema and migrations with Drizzle. Do not rely on v4's outdated generator example.
 - Project redacted agent and policy events with shared run ID, stable action ID, stage, attempt and outcome or safe reference for authorized scoped queries; exclude prompts, reasoning, tool payloads and credentials.
 - Implement per-project Durable Objects with SQLite and Drizzle's Durable SQLite driver as the authoritative serialized project-state store. Keep large artifacts in R2; test concurrent transitions, retries and recovery.
+- Persist typed run checkpoints in project SQLite with completed step, next action, status and immutable or versioned R2 evidence references; test persistence and recovery across restart.
 - `_platform/workflow_registry.json` seed + loader/validator (uses contracts schema); transition guard function.
 - **Exit:** Workers-runtime tests for concurrent transitions, failure recovery and registry validation.
 
@@ -130,6 +131,7 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 - Give each specialist agent (refinement, planning, development, QA, operations) a role-appropriate GitHub toolset through app-backed adapters or MCP, using GitHub App installation tokens for bot actions. Route tool calls through `MCP_GATEWAY`; render DENY as a policy block. A human approval must trigger a new policy evaluation; it must not automatically override an explicit deny.
 - Post bounded progress, evidence and completion summaries to the originating issue/PR. Bind actions and approvals to the exact repository, PR head SHA, operation and user; ordinary free-form comments are feedback, not authorization.
 - Exchange validated stage-specific envelopes of immutable or versioned R2 brief/evidence references, bound to server-derived run, repository and revision; authorize at consumption, reject stale or cross-repository references, and do not pass transcripts.
+- Checkpoint specialist progress in project state and resume via the Workflow after actor, scope and authorization checks, loading only the authorized context needed for the next action. Keep reusable decisions in reviewed docs or ADRs, not agent transcripts or a semantic-memory service.
 - Correlate redacted run events with policy and analytics using shared run ID, stable action ID, stage, attempt and outcome or safe reference; expose authorized scoped details in run views without prompts, reasoning, tool payloads or credentials.
 - Add a synthetic CI replay with stubbed GitHub and model adapters across ingestion, state, approval and policy: valid approval yields one scoped GitHub outcome, stale head SHA or DENY yields no protected writes, and a lost response is reconciled without blindly retrying a completed side effect. Keep action IDs stable across restart; do not assume a local record guarantees exactly-once delivery.
 - Implement TanStack DB collections for authorized issue/PR and project state using the Query-backed loading and event reconciliation contract above. Compose work-queue and run-detail views with shared shadcn/ui components. Add Virtual only if logs or evidence lists warrant it.
@@ -138,6 +140,7 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 **WS7 · SDLC Workflows** — `apps/factory-workflows/` (separate Worker)
 - Workflows live in their own Worker deployed to prod + staging; control plane binds by name (previews → staging), since Previews can't create per-branch Workflows.
 - `BA → SA → Dev → QA → DevOps` workflow with `waitForEvent` human approval steps 1–4, transitions through the selected state authority, and construction briefs in R2.
+- Resume from the typed project checkpoint through the Workflow; recheck actor, scope and current authorization before loading only the authorized context needed for the next action. A checkpoint does not grant approval or bypass policy; reconcile ambiguous side effects before retrying.
 - Validate stage-specific envelopes of immutable or versioned R2 brief/evidence references against server-derived run, repository and revision; authorize at consumption and reject stale or cross-repository references instead of passing transcripts.
 - Receive GitHub review/approval webhooks to resume gated steps; validate sender permissions and bind the event to the expected repository, PR head SHA, workflow run and requested operation.
 - The control plane may show approval state, but GitHub is the initial human interaction surface. Reconcile TanStack DB project state only after verified webhook handling and server confirmation.
