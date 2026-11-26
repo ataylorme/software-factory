@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "workflows": [
+    {
+      "id": "sdlc",
+      "initialState": "BACKLOG",
+      "transitions": [
+        {
+          "from": "BACKLOG",
+          "to": "BUSINESS_ANALYSIS",
+          "approvalRequired": false
+        },
+        {
+          "from": "BUSINESS_ANALYSIS",
+          "to": "SOLUTION_ARCHITECTURE",
+          "approvalRequired": true
+        },
+        {
+          "from": "SOLUTION_ARCHITECTURE",
+          "to": "DEVELOPMENT",
+          "approvalRequired": true
+        },
+        {
+          "from": "DEVELOPMENT",
+          "to": "QA",
+          "approvalRequired": true
+        },
+        {
+          "from": "QA",
+          "to": "DEVELOPMENT",
+          "approvalRequired": false
+        },
+        {
+          "from": "QA",
+          "to": "DEVOPS",
+          "approvalRequired": true
+        },
+        {
+          "from": "DEVOPS",
+          "to": "COMPLETE",
+          "approvalRequired": false
+        }
+      ]
+    }
+  ]
+}

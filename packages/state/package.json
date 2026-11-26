@@ -1,0 +1,13 @@
+{
+  "name": "@software-factory/state",
+  "private": true,
+  "type": "module",
+  "exports": {},
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --project tsconfig.json"
+  },
+  "dependencies": {
+    "@software-factory/contracts": "workspace:*"
+  }
+}

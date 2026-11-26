@@ -1,0 +1,9 @@
+{
+  "name": "@software-factory/mcp-policy-gateway",
+  "private": true,
+  "type": "module",
+  "exports": {},
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json"
+  }
+}
