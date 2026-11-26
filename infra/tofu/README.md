@@ -31,7 +31,7 @@ or run cleanup from this module until those protections are in place.
 
 ## Module checks
 
-With OpenTofu 1.10.7 installed:
+With OpenTofu 1.13.10 installed:
 
 ```sh
 cd infra/tofu/modules/pr-ephemeral

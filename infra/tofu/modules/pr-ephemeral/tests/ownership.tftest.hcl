@@ -1,8 +1,12 @@
 mock_provider "cloudflare" {}
 
+# Plan-only fixtures: the mocked provider never contacts Cloudflare. The account
+# and repository IDs are the real, nonsecret IDs for this project so ownership
+# names match what a PR root would produce. Deployment roots must still supply
+# their own staging account and repository inputs.
 variables {
-  account_id          = "0123456789abcdef0123456789abcdef"
-  repository_id       = 123456
+  account_id          = "16e8f7c4ab9857745900067adaee038a"
+  repository_id       = 1466017304
   pull_request_number = 42
 }
 
@@ -10,12 +14,12 @@ run "isolated_databases_without_bucket" {
   command = plan
 
   assert {
-    condition     = output.owner == "factory-repo-123456-pr-42"
+    condition     = output.owner == "factory-repo-1466017304-pr-42"
     error_message = "Resources must be identified by repository and pull request."
   }
 
   assert {
-    condition     = output.auth_database.name == "factory-repo-123456-pr-42-auth" && output.analytics_database.name == "factory-repo-123456-pr-42-analytics"
+    condition     = output.auth_database.name == "factory-repo-1466017304-pr-42-auth" && output.analytics_database.name == "factory-repo-1466017304-pr-42-analytics"
     error_message = "Authentication and analytics must use distinct PR-owned databases."
   }
 
@@ -33,7 +37,7 @@ run "isolated_bucket" {
   }
 
   assert {
-    condition     = output.artifacts_bucket == "factory-repo-123456-pr-42-artifacts"
+    condition     = output.artifacts_bucket == "factory-repo-1466017304-pr-42-artifacts"
     error_message = "The optional bucket must be owned by this repository and pull request."
   }
 }
