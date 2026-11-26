@@ -103,6 +103,7 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 
 **WS3 · Data & state layer** — `packages/db`, `packages/state`
 - Analytics D1 schema and migrations with Drizzle. Do not rely on v4's outdated generator example.
+- Project redacted agent and policy events with shared run ID, stable action ID, stage, attempt and outcome or safe reference for authorized scoped queries; exclude prompts, reasoning, tool payloads and credentials.
 - Implement per-project Durable Objects with SQLite and Drizzle's Durable SQLite driver as the authoritative serialized project-state store. Keep large artifacts in R2; test concurrent transitions, retries and recovery.
 - `_platform/workflow_registry.json` seed + loader/validator (uses contracts schema); transition guard function.
 - **Exit:** Workers-runtime tests for concurrent transitions, failure recovery and registry validation.
@@ -111,6 +112,7 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 - Standalone Worker exposing MCP `tools/call` proxy; use `@cedar-policy/cedar-wasm` and test Workers compatibility, bundle size and fail-closed behavior. Evaluate Access MCP portals only as optional coarse control, not a replacement for argument-level policy.
 - Cedar schema + the 3 policies from §5.1; policies loaded from R2 with in-memory TTL cache; **fail-closed** on any error.
 - Audit write to D1 `PolicyAuditLog` (via `packages/db`, or an interface stub if WS3 not merged yet).
+- Correlate redacted decisions with agent and analytics events using the shared run/action IDs, stage and attempt without recording prompts, reasoning, tool payloads or credentials.
 - Policy unit test matrix (role × tool × sdlcState × branch).
 - Deployed twice: `mcp-policy-gateway` (prod) and `mcp-policy-gateway-staging` (staging R2 policies + staging audit D1), since Preview service bindings always hit production deployments.
 - **Exit:** service binding callable; ALLOW/DENY tests green; deny on missing/invalid policy.
@@ -127,12 +129,16 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 - Use the TanStack AI model/tool API. Keep run orchestration in Cloudflare Workflows and durable project state in per-project Durable Objects; don't make UI chat transport a prerequisite.
 - Give each specialist agent (refinement, planning, development, QA, operations) a role-appropriate GitHub toolset through app-backed adapters or MCP, using GitHub App installation tokens for bot actions. Route tool calls through `MCP_GATEWAY`; render DENY as a policy block. A human approval must trigger a new policy evaluation; it must not automatically override an explicit deny.
 - Post bounded progress, evidence and completion summaries to the originating issue/PR. Bind actions and approvals to the exact repository, PR head SHA, operation and user; ordinary free-form comments are feedback, not authorization.
+- Exchange validated stage-specific envelopes of immutable or versioned R2 brief/evidence references, bound to server-derived run, repository and revision; authorize at consumption, reject stale or cross-repository references, and do not pass transcripts.
+- Correlate redacted run events with policy and analytics using shared run ID, stable action ID, stage, attempt and outcome or safe reference; expose authorized scoped details in run views without prompts, reasoning, tool payloads or credentials.
+- Add a synthetic CI replay with stubbed GitHub and model adapters across ingestion, state, approval and policy: valid approval yields one scoped GitHub outcome, stale head SHA or DENY yields no protected writes, and a lost response is reconciled without blindly retrying a completed side effect. Keep action IDs stable across restart; do not assume a local record guarantees exactly-once delivery.
 - Implement TanStack DB collections for authorized issue/PR and project state using the Query-backed loading and event reconciliation contract above. Compose work-queue and run-detail views with shared shadcn/ui components. Add Virtual only if logs or evidence lists warrant it.
 - Depends: WS2, WS4, WS5.
 
 **WS7 · SDLC Workflows** — `apps/factory-workflows/` (separate Worker)
 - Workflows live in their own Worker deployed to prod + staging; control plane binds by name (previews → staging), since Previews can't create per-branch Workflows.
 - `BA → SA → Dev → QA → DevOps` workflow with `waitForEvent` human approval steps 1–4, transitions through the selected state authority, and construction briefs in R2.
+- Validate stage-specific envelopes of immutable or versioned R2 brief/evidence references against server-derived run, repository and revision; authorize at consumption and reject stale or cross-repository references instead of passing transcripts.
 - Receive GitHub review/approval webhooks to resume gated steps; validate sender permissions and bind the event to the expected repository, PR head SHA, workflow run and requested operation.
 - The control plane may show approval state, but GitHub is the initial human interaction surface. Reconcile TanStack DB project state only after verified webhook handling and server confirmation.
 - Depends: WS3, WS2 (WS5 for brief generation).
@@ -151,10 +157,13 @@ The plan uses Previews, but its sample `wrangler.jsonc` and assumptions conflict
 - Tier 2 (required for any D1 migration): `pr-ephemeral` tofu module on PR open → override branch `previews` D1 bindings → apply migrations → `wrangler preview`.
 - PR-close cleanup: delete the exact recorded Preview and any verified owned temporary resources; scope IaC state per PR and handle cleanup failures without touching shared resources.
 - `cloudflare.deploy_preview` MCP tool; QA agent hits preview URL + queries observability; self-heal loop back to Dev.
+- Require a validated `pass`, `retryable_failure` or `blocked` verdict with check IDs and evidence references bound to the run, preview deployment and PR head SHA. Missing, stale, inaccessible or inconclusive evidence blocks; only verified retryable failures may request a Dev retry.
+- Persist the retry budget across restarts and test that the first attempt beyond the bound makes no Dev call. A pass and model feedback do not grant approval or bypass human gates.
 - Depends: WS1, WS7, WS8.
 
 **WS10 · Admin spend & policy audit dashboard**
 - TanStack Table views styled with shadcn/ui: spend by team/repo/persona/commit pool, budget alerts, policy ALLOW/DENY audit; read-only `MAINTENANCE_ADMIN` view. Use validated Router search parameters and Query for server-filtered, paginated results, reusing TanStack DB collections where they own the displayed records; add Virtual only if needed.
+- Surface the shared redacted run/action correlation, stage, attempt and outcome or safe reference in authorized scoped audit views without displaying prompts, reasoning, tool payloads or credentials.
 - Depends: WS2, WS3 (can start earlier against seeded D1 data).
 
 ---
